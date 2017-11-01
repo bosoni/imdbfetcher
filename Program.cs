@@ -2,19 +2,21 @@
 imdbfetcher
 by mjt, dani [2017]
 
+
 idea:
 eli onnistuuko softa joka etsii kansiosta elokuvat, ja niille hakee IMDBstä arvosanan, juonen ja näyttelijät..
 ja tallentaa (esim .txt filuun) ko. tiedot, elokuvan kansioon
-
-IMDB HAKU:   http://www.imdb.com/find?q="leffan nimi"
 
 käytetään omdbapia:
  https://www.codeproject.com/Questions/1105851/How-to-get-movie-information-from-imdb-in-Csharp
    --> http://www.omdbapi.com/?t=Titanic&y=&plot=short&r=json
 
-
 tiedostonimestä leffan nimi:
   otetaan kirjaimet, jätetään numerot ym roina pois (300 leffaa ei voi sitten hakea)
+
+
+juuresta ei voi hakea rekursiivisesti!
+
 
  */
 
@@ -32,12 +34,18 @@ namespace ImdbFetcher
     {
         static void Main(string[] args)
         {
+            Console.WriteLine("imdbfetcher  by mjt, dani [2017]\n\n");
+
             ImdbFetcher i = new ImdbFetcher();
 
             if (args.Length == 0)
                 i.Start(Directory.GetCurrentDirectory());
             else
                 i.Start(args[0]);
+
+            // odota napinpainallusta
+            Console.WriteLine("\nPress any key...");
+            Console.ReadKey();
         }
     }
 
@@ -51,28 +59,42 @@ namespace ImdbFetcher
             SearchOption so = subDirs ? SearchOption.AllDirectories : SearchOption.TopDirectoryOnly;
             string output;
 
-            string[] filter = System.IO.File.ReadAllLines("filter.txt");
-            for (int q = 0; q < filter.Length; q++)
-                filter[q] = filter[q].ToUpper();
+            // defaults
+            string[] filter = { "mp4", "divx", "xvid", "rip", "avi", "web-dl", "720p", "1080p" };
+
+            try
+            {
+                if (File.Exists("filter.txt"))
+                {
+                    filter = File.ReadAllLines("filter.txt");
+                    for (int q = 0; q < filter.Length; q++)
+                        filter[q] = filter[q].ToUpper();
+                }
+            }
+            catch (Exception e)
+            {
+                Console.WriteLine(e.ToString());
+            }
 
             foreach (string ext in exts)
             {
                 Console.WriteLine("Searching " + ext + "...");
                 string[] files = { "" };
-                //try
+                try
                 {
                     files = Directory.GetFiles(path, "*." + ext, so);
-
-
                 }
-                //catch (Exception e) { }
+                catch (Exception e)
+                {
+                    Console.WriteLine(e.ToString());
+                    continue;
+                }
 
-                /*
+                /* NOTE:
                  * juuresta ei voi hakea rekursiivisesti:
                         An unhandled exception of type 'System.UnauthorizedAccessException' occurred in mscorlib.dll
                         Additional information: Access to the path 'D:\System Volume Information' is denied.
                  */
-
 
                 foreach (string s in files)
                 {
@@ -106,63 +128,68 @@ namespace ImdbFetcher
             if (names.Count == 0)
             {
                 Console.WriteLine("Movies not found at " + path);
+                return;
             }
             Console.WriteLine("===============================================================\n\n\n");
 
-
-            using (System.IO.StreamWriter file = new System.IO.StreamWriter("out.txt"))
+            try
             {
-                foreach (string movieName in names)
+                using (System.IO.StreamWriter file = new System.IO.StreamWriter("out.txt"))
                 {
-                    //Console.WriteLine("Search " + movieName);
-
-                    if (movieName.Length <= 1) continue;
-
-                    string searchStr = "http://www.omdbapi.com/?t=" + movieName + "&y=&plot=short&r=xml";
-
-                    WebRequest req = HttpWebRequest.Create(searchStr);
-                    req.Method = "GET";
-
-                    string source;
-                    Console.Write("Search " + movieName);
-                    using (StreamReader reader = new StreamReader(req.GetResponse().GetResponseStream()))
+                    foreach (string movieName in names)
                     {
-                        source = reader.ReadToEnd();
-                        if (source.Contains("root response=\"False\""))
+                        if (movieName.Length <= 1) continue;
+
+                        string searchStr = "http://www.omdbapi.com/?t=" + movieName + "&y=&plot=short&r=xml";
+
+                        WebRequest req = HttpWebRequest.Create(searchStr);
+                        req.Method = "GET";
+
+                        string source;
+                        Console.Write("Search " + movieName);
+                        using (StreamReader reader = new StreamReader(req.GetResponse().GetResponseStream()))
                         {
-                            Console.Write("...FAILED.\n");
-                            continue;
+                            source = reader.ReadToEnd();
+                            if (source.Contains("root response=\"False\""))
+                            {
+                                Console.Write("...FAILED.\n");
+                                continue;
+                            }
+
+                            Console.WriteLine("...save infos.");
+
+                            // parse xml
+                            xmlDoc.LoadXml(source);
+
+                            XmlElement root = xmlDoc.DocumentElement;
+
+                            XmlElement pElement;
+                            pElement = (XmlElement)root.SelectSingleNode("movie");
+
+                            /*
+                            Console.WriteLine("Title: " + pElement.GetAttribute("title") + "     Year: " + pElement.GetAttribute("year"));
+                            Console.WriteLine("Imdb Rating: " + pElement.GetAttribute("imdbRating"));
+                            Console.WriteLine("Plot: " + pElement.GetAttribute("plot"));
+                            Console.WriteLine("Actors: " + pElement.GetAttribute("actors"));
+                            //Console.WriteLine(" " + pElement.GetAttribute(""));
+                            */
+
+                            file.WriteLine("Title: " + pElement.GetAttribute("title") + "     Year: " + pElement.GetAttribute("year"));
+                            file.WriteLine("Imdb Rating: " + pElement.GetAttribute("imdbRating"));
+                            file.WriteLine("Plot: " + pElement.GetAttribute("plot"));
+                            file.WriteLine("Actors: " + pElement.GetAttribute("actors"));
+
                         }
-
-                        Console.WriteLine("...save infos.");
-
-                        // parse xml
-                        xmlDoc.LoadXml(source);
-
-                        XmlElement root = xmlDoc.DocumentElement;
-
-                        XmlElement pElement;
-                        pElement = (XmlElement)root.SelectSingleNode("movie");
-
-                        /*
-                        Console.WriteLine("Title: " + pElement.GetAttribute("title") + "     Year: " + pElement.GetAttribute("year"));
-                        Console.WriteLine("Imdb Rating: " + pElement.GetAttribute("imdbRating"));
-                        Console.WriteLine("Plot: " + pElement.GetAttribute("plot"));
-                        Console.WriteLine("Actors: " + pElement.GetAttribute("actors"));
-                        //Console.WriteLine(" " + pElement.GetAttribute(""));
-                        */
-
-                        file.WriteLine("Title: " + pElement.GetAttribute("title") + "     Year: " + pElement.GetAttribute("year"));
-                        file.WriteLine("Imdb Rating: " + pElement.GetAttribute("imdbRating"));
-                        file.WriteLine("Plot: " + pElement.GetAttribute("plot"));
-                        file.WriteLine("Actors: " + pElement.GetAttribute("actors"));
-
+                        file.WriteLine("\n======================================================================\n");
+                        //Console.WriteLine(source);//DEBUG
                     }
-                    file.WriteLine("\n======================================================================\n");
-                    //Console.WriteLine(source);//DEBUG
-                }
-                Console.WriteLine("\n\nOK.\nout.txt file saved.\n");
+                    Console.WriteLine("\n\nOK.\nout.txt file saved.\n");
 
+                }
+            }
+            catch (Exception e)
+            {
+                Console.WriteLine(e.ToString());
             }
         }
 
